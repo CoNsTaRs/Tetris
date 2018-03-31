@@ -57,15 +57,15 @@ module Tetris where
       cellHeight (_, y) = foldl max 0 (map snd (filter ((y ==) . fst) pf))
   
   
-  rotateCC :: Playfield -> Shape -> Rotation -> Area -> Area
-  rotateCC _ ShpO _ x = x
-  rotateCC pf s r a = applyWallKick attempt where
+  rotate :: Playfield -> Shape -> Rotation -> Dir -> Area -> Area
+  rotate _ ShpO _ _ x = x
+  rotate pf s r d a = applyWallKick attempt where
 
     rotated :: Area
-    rotated = tetromRotCC s r a
+    rotated = tetromRotate s r d a
 
     attempt :: Maybe Area
-    attempt = wallKick pf s r CC rotated
+    attempt = wallKick pf s r d rotated
 
     applyWallKick :: Maybe Area -> Area
     applyWallKick Nothing  = a
