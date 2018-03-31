@@ -1,15 +1,21 @@
 module Tetromino where
-  
+
+  -- Shapes of Minos, which are I, O, S, Z, L, J and T
   data Shape = ShpI | ShpO | ShpS | ShpZ | ShpL | ShpJ | ShpT
 
+  -- Rotations of Minos, facing up, right, down and left
   data Rotation = Spw | Rht | Rev | Lft
 
+  -- Directions to rotate, clockwise and counter-clockwise
   data Dir = CW | CC
 
+  -- Coordinate of cells
   type Coord = (Int, Int)
 
+  -- Area that is covered by a Mino, represented by a list of cells
   type Area = [Coord]
 
+  -- The original covered area of each Mino
   tetromState :: Shape -> Rotation -> Area
   tetromState shape rotation = case (shape, rotation) of
     (ShpI, Spw) -> [(2,  0), (3,  0), (4,  0), (5, 0)]
@@ -37,10 +43,12 @@ module Tetromino where
     (ShpT, Rht) -> [(4, -1), (4,  0), (5,  0), (4, 1)]
     (ShpT, Rev) -> [(3,  0), (4,  0), (5,  0), (4, 1)]
     (ShpT, Lft) -> [(4, -1), (3,  0), (4,  0), (4, 1)]
-  
+
+  -- The initial covered area of each Mino
   tetromInit :: Shape -> Area
   tetromInit shape = tetromState shape Spw
 
+  -- Iterate rotations clockwise
   rotationNext :: Rotation -> Rotation
   rotationNext r = case r of
     Spw -> Rht
@@ -48,6 +56,7 @@ module Tetromino where
     Rev -> Lft
     Lft -> Rht
 
+  -- Iterate rotations counter-clockwise
   rotationPrev :: Rotation -> Rotation
   rotationPrev r = case r of
     Spw -> Lft
@@ -55,6 +64,7 @@ module Tetromino where
     Rev -> Rht
     Lft -> Rev
 
+  -- Calculate the new covered area after a rotate
   tetromRotate :: Shape -> Rotation -> Dir -> Area -> Area
   tetromRotate s r d ((x, y) : _) = fmap (applyOffset offset) rotatedOrig where
 
