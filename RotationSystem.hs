@@ -2,9 +2,11 @@ module RotationSystem where
 
   import Tetromino
   import Playfield
-  
+
+  -- Difference between two coords
   type Offset = (Int, Int)
-  
+
+  -- Wall kick data for SuperRS according to http://tetris.wikia.com/wiki/SRS
   wallKickData :: Shape -> Rotation -> Dir -> [Offset]
   wallKickData s r d = case (s, (r, d)) of
     (ShpO, (_,   _))  -> [(0, 0)]
@@ -24,7 +26,8 @@ module RotationSystem where
     (_, (Lft, CC)) -> [(0, 0), (-1, 0), (-1, -1), (0,  2), (-1,  2)]
     (_, (Lft, CW)) -> [(0, 0), (-1, 0), (-1, -1), (0,  2), (-1,  2)]
     (_, (Spw, CC)) -> [(0, 0), ( 1, 0), ( 1,  1), (0, -2), ( 1, -2)]
-  
+
+  -- Try to perform wall kicks, returns Nothing if failed
   wallKick :: Playfield -> Shape -> Rotation -> Dir -> Area -> Maybe Area
   wallKick _  ShpO _ _ a = Just a
   wallKick pf s    r d a = offset >>= (applyOffset a) where
