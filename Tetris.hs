@@ -80,17 +80,18 @@ module Tetris where
 
   -- Find lines to clear after a Mino lands
   findFullLines :: Playfield -> [Int]
-  findFullLines pf = findFullLines' [] pf where
+  findFullLines pf = findFullLines' pf [] where
+
     findFullLines' :: Playfield -> [Int] -> [Int]
     findFullLines' ((x, y) : ps) ls = case (ps, ls) of
-      | (_, []) -> if isFullLine (fieldWidth - 1) y ps then y : [] else []
-      | ([], _) -> if elem y ls then ls else if isFullLine (fieldWidth - 1) y ps then y : ls else ls
-      | (_, )   -> if elem y ls then findFullLines' ps ls else findFullLines' ps (if isFullLine (fieldWidth - 1) y ps then y : ls else ls)
+      (_, []) -> if isFullLine (fieldWidth - 1) y ps then y : [] else []
+      ([], _) -> if elem y ls then ls else if isFullLine (fieldWidth - 1) y ps then y : ls else ls
+      (_, _)  -> if elem y ls then findFullLines' ps ls else findFullLines' ps (if isFullLine (fieldWidth - 1) y ps then y : ls else ls)
 
-    isFillLine :: Int -> Int -> Playfield -> Bool
-    isFillLine 0 _ _             = True
-    isFillLine _ _ (_ : [])      = False
-    isFillLine n l ((_, y) : xs) = isFillLine (if y == l then (n + 1) else n) l xs
+    isFullLine :: Int -> Int -> Playfield -> Bool
+    isFullLine 0 _ _             = True
+    isFullLine _ _ (_ : [])      = False
+    isFullLine n l ((_, y) : xs) = isFullLine (if y == l then (n + 1) else n) l xs
 
 
   -- To clear lines from the line numbers given
