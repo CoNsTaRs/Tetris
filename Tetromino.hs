@@ -4,6 +4,8 @@ module Tetromino where
 
   data Rotation = Spw | Rht | Rev | Lft
 
+  data Dir = CW | CC
+
   type Coord = (Int, Int)
 
   type Area = [Coord]
@@ -36,8 +38,8 @@ module Tetromino where
     (ShpT, Rev) -> [(3,  0), (4,  0), (5,  0), (4, 1)]
     (ShpT, Lft) -> [(4, -1), (3,  0), (4,  0), (4, 1)]
   
-  initState :: Shape -> Area
-  initState shape = tetromState shape Spw
+  tetromInit :: Shape -> Area
+  tetromInit shape = tetromState shape Spw
 
   rotationNext :: Rotation -> Rotation
   rotationNext r = case r of
@@ -53,11 +55,13 @@ module Tetromino where
     Rev -> Rht
     Lft -> Rev
 
-  tetromRotCC :: Shape -> Rotation -> Area -> Area
-  tetromRotCC s r ((x, y) : _) = fmap (applyOffset offset) rotatedOrig where
+  tetromRotate :: Shape -> Rotation -> Dir -> Area -> Area
+  tetromRotate s r d ((x, y) : _) = fmap (applyOffset offset) rotatedOrig where
 
     rotatedOrig :: Area
-    rotatedOrig = tetromState s (rotationNext r)
+    rotatedOrig = case d of
+      CC -> tetromState s (rotationNext r)
+      CW -> tetromState s (rotationPrev r)
 
     calcOffset :: Coord -> Coord -> Coord
     calcOffset (x, y) (p, q) = (x - y, p - q)
