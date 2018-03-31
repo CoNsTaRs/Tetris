@@ -2,8 +2,6 @@ module RotationSystem where
 
   import Tetromino
   import Playfield
-
-  data Dir = CW | CC
   
   type Offset = (Int, Int)
   
