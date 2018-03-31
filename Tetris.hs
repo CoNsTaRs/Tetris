@@ -4,6 +4,7 @@ module Tetris where
   import Tetromino
   import Playfield
   import RotationSystem
+  import SuperRS
 
 
   -- Left shift for one step
@@ -63,15 +64,15 @@ module Tetris where
 
 
   -- Rotate clockwise or counter-clockwise
-  rotate :: Playfield -> Shape -> Rotation -> Dir -> Area -> Area
-  rotate _ ShpO _ _ x = x
-  rotate pf s r d a = applyWallKick attempt where
+  rotate :: RotationSystem -> Playfield -> Shape -> Rotation -> Dir -> Area -> Area
+  rotate _ _ ShpO _ _ x = x
+  rotate (RS _ rsRotate rsWallKick) pf s r d a = applyWallKick attempt where
 
     rotated :: Area
-    rotated = tetromRotate s r d a
+    rotated = rsRotate s r d a
 
     attempt :: Maybe Area
-    attempt = wallKick pf s r d rotated
+    attempt = rsWallKick pf s r d rotated
 
     applyWallKick :: Maybe Area -> Area
     applyWallKick Nothing  = a
