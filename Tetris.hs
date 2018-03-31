@@ -5,7 +5,9 @@ module Tetris where
   import Tetromino
   import Playfield
   import RotationSystem
-  
+
+
+  -- Left shift for one step
   moveLft :: Playfield -> Area -> Area
   moveLft pf ar = if tryLft ar then map shiftLft ar else ar where
     
@@ -17,7 +19,9 @@ module Tetris where
     
     shiftLft :: Coord -> Coord
     shiftLft (x, y) = (x - 1, y)
-  
+
+
+  -- Right shift for one step
   moveRht :: Playfield -> Area -> Area
   moveRht pf ar = if tryRht ar then map shiftRht ar else ar where
     
@@ -31,6 +35,7 @@ module Tetris where
     shiftRht (x, y) = (x + 1, y)
   
   
+  -- Soft drop
   softDorp :: Playfield -> Area -> Area
   softDorp pf ar = if tryDwn ar then map shiftDwn ar else ar where
 
@@ -44,6 +49,7 @@ module Tetris where
     shiftDwn (x, y) = (x, y + 1)
   
   
+  -- Hard drop
   hardDrop :: Playfield -> Area -> Playfield
   hardDrop pf ar = pf ++ (fmap (drop height) ar) where
 
@@ -57,6 +63,7 @@ module Tetris where
       cellHeight (_, y) = foldl max 0 (map snd (filter ((y ==) . fst) pf))
   
   
+  -- Rotate clockwise or counter-clockwise
   rotate :: Playfield -> Shape -> Rotation -> Dir -> Area -> Area
   rotate _ ShpO _ _ x = x
   rotate pf s r d a = applyWallKick attempt where
@@ -72,12 +79,14 @@ module Tetris where
     applyWallKick (Just x) = x
   
   
+  -- Check if the line number given is full horizontally
   isFillLine :: Int -> Int -> Playfield -> Bool
   isFillLine 0 _ _             = True
   isFillLine _ _ (_ : [])      = False
   isFillLine n l ((_, y) : xs) = isFillLine (if y == l then (n + 1) else n) l xs
 
   
+  -- To clear lines from the line numbers given
   clearLines :: Playfield -> [Int] -> Playfield
   clearLines xs (y : ys) = clearLines (clearLine xs y) ys where
 
@@ -92,7 +101,7 @@ module Tetris where
     dropHigherLines :: Coord -> Coord
     dropHigherLines (x, y) = (x, if y < l then y - 1 else y)
   
-  
+  -- Line clear gravity
   dropLines :: Playfield -> [Int] -> Playfield
   dropLines pf xs = dropLines' pf (sort xs) where
 
