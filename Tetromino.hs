@@ -1,6 +1,6 @@
 module Tetromino where
 
-  -- Coordinate of cells
+  -- Coordinate of a cell
   type Coord = (Int, Int)
 
   -- Area that is covered by a Mino, represented by a list of cells
@@ -33,4 +33,3 @@ module Tetromino where
     Rht -> Spw
     Rev -> Rht
     Lft -> Rev
-    
