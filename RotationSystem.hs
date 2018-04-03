@@ -7,13 +7,13 @@ module RotationSystem where
   data Dir = CW | CC
 
   {-
-     A Rotation System defines:
+     A Rotation System should define:
 
-       How tetrominos spawn
-       How tetrominos rotate
-       What wall kicks tetrominos may perform
+       * How tetrominos spawn
+       * How tetrominos rotate
+       * What wall kicks tetrominos may perform
 
-     accroding to https://tetris.wiki/Rotation_system
+     Accroding to https://tetris.wiki/Rotation_system
   -}
 
   type Spawn    = Shape -> Mino
