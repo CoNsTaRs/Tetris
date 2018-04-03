@@ -5,14 +5,24 @@ module SuperRS where
   import RotationSystem
   import SuperRSData
 
+  {-
+     This module implements the Super Rotation System as a RotationSystem
+
+       * Spawn:     spawnSRS
+       * Rotate:    rotateSRS
+       * Wall Kick: wallKickSRS
+
+     See: https://tetris.wiki/SRS
+  -}
+
   superRS :: RotationSystem
-  superRS = RS spawnStateSRS rotateSRS wallKickSRS where
+  superRS = RS spawnSRS rotateSRS wallKickSRS where
 
-    -- The spawn state defined by SuperRS
-    spawnStateSRS :: Spawn
-    spawnStateSRS shape = Mino (origStateSRS shape Spw) shape Spw
+    -- Spawn a Mino
+    spawnSRS :: Spawn
+    spawnSRS shape = Mino (origStateSRS shape Spw) shape Spw
 
-    -- Rotation rules defined by SuperRS
+    -- Rotation rules defined by SRS
     rotateSRS :: Rotate
     rotateSRS _ mino@(Mino [] _ _)      = mino  -- Should never happen
     rotateSRS d (Mino ((x, y) : _) s r) = Mino area s rotation where
@@ -39,7 +49,7 @@ module SuperRS where
         CW -> rotationNext r
         CC -> rotationPrev r
 
-    -- Wall kick rules defined by SuperRS
+    -- Wall kick rules defined by SRS
     wallKickSRS :: WallKick
     wallKickSRS _  mino@(Mino _ ShpO _) _ = Just mino
     wallKickSRS pf mino@(Mino a s    r) d = offset >>= applyOffset mino where
