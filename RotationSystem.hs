@@ -13,7 +13,7 @@ module RotationSystem where
        How tetrominos rotate
        What wall kicks tetrominos may perform
 
-     accroding to http://tetris.wikia.com/wiki/Category:Rotation_Systems
+     accroding to https://tetris.wiki/Rotation_system
   -}
 
   type Spawn    = Shape -> Mino
