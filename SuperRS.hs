@@ -9,7 +9,7 @@ module SuperRS where
   superRS = RS spawnStateSRS rotateSRS wallKickSRS where
 
     -- The spawn state defined by SuperRS
-    spawnStateSRS :: SpawnState
+    spawnStateSRS :: Spawn
     spawnStateSRS shape = Mino (origStateSRS shape Spw) shape Spw
 
     -- Rotation rules defined by SuperRS
@@ -69,4 +69,3 @@ module SuperRS where
         applyOffset' :: Area -> Offset -> Area
         applyOffset' [] _ = []
         applyOffset' ((x', y') : as) (p, q) = (x' + p, y' + q) : applyOffset' as (p, q)
-        
