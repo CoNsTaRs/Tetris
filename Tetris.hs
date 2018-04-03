@@ -1,81 +1,94 @@
 module Tetris where
 
   import Data.List
+  import System.Random
+  import Control.Monad
   import Tetromino
   import Playfield
   import RotationSystem
-  import SuperRS
 
 
   -- Left shift for one step
-  moveLft :: Playfield -> Area -> Area
-  moveLft pf ar = if tryLft ar then map shiftLft ar else ar where
+  moveLft :: Playfield -> Mino -> Mino
+  moveLft pf (Mino ar s r) = Mino area s r where
 
     tryLft :: Area -> Bool
-    tryLft area = case area of
-      ((0, _) : _)  -> False
-      ((x, y) : []) -> not (elem (x - 1, y) pf)
-      ((x, y) : as) -> (not (elem (x - 1, y) pf)) && (tryLft as)
+    tryLft [] = False  -- Should never happen
+    tryLft ((x, y) : as)
+      | x == 0 = False
+      | null as = (x - 1, y) `notElem` pf
+      | otherwise = ((x - 1, y) `notElem` pf) && tryLft as
 
     shiftLft :: Coord -> Coord
     shiftLft (x, y) = (x - 1, y)
 
+    area :: Area
+    area = if tryLft ar then map shiftLft ar else ar
+
 
   -- Right shift for one step
-  moveRht :: Playfield -> Area -> Area
-  moveRht pf ar = if tryRht ar then map shiftRht ar else ar where
+  moveRht :: Playfield -> Mino -> Mino
+  moveRht pf (Mino ar s r) = Mino area s r where
 
     tryRht :: Area -> Bool
-    tryRht area = case area of
-      ((fieldWidth, _) : _)  -> False
-      ((x, y)          : []) -> not (elem (x + 1, y) pf)
-      ((x, y)          : as) -> (not (elem (x + 1, y) pf)) && (tryRht as)
+    tryRht [] = False  -- Should never happen
+    tryRht ((x, y) : as)
+      | x == fieldWidth = False
+      | null as = (x + 1, y) `notElem` pf
+      | otherwise = (x + 1, y) `notElem` pf && tryRht as
 
     shiftRht :: Coord -> Coord
     shiftRht (x, y) = (x + 1, y)
 
+    area :: Area
+    area = if tryRht ar then map shiftRht ar else ar
+
 
   -- Soft drop
-  softDorp :: Playfield -> Area -> Area
-  softDorp pf ar = if tryDwn ar then map shiftDwn ar else ar where
+  softDrop :: Playfield -> Mino -> Mino
+  softDrop pf (Mino ar s r) = Mino ar' s r where
 
     tryDwn :: Area -> Bool
-    tryDwn ar = case ar of
-      ((_, fieldHeight) : _)  -> False
-      ((x, y)           : []) -> not (elem (x, y + 1) pf)
-      ((x, y)           : as) -> (not (elem (x, y + 1) pf)) && (tryDwn as)
+    tryDwn [] = False  -- Should never happen
+    tryDwn ((x, y) : as)
+      | y == fieldHeight = False
+      | null as  = (x, y + 1) `notElem` pf
+      | otherwise = (x, y + 1) `notElem` pf && tryDwn as
 
     shiftDwn :: Coord -> Coord
     shiftDwn (x, y) = (x, y + 1)
 
+    ar' :: Area
+    ar' = if tryDwn ar then map shiftDwn ar else ar
+
 
   -- Hard drop
-  hardDrop :: Playfield -> Area -> Playfield
-  hardDrop pf ar = pf ++ (fmap (drop height) ar) where
+  hardDrop :: Playfield -> Mino -> Playfield
+  hardDrop pf (Mino ar _ _) = pf ++ fmap (drop' height) ar where
 
-    drop :: Int -> Coord -> Coord
-    drop n (x, y) = (x, y + n)
+    drop' :: Int -> Coord -> Coord
+    drop' n (x, y) = (x, y + n)
 
     height :: Int
-    height = foldl max 0 (map cellHeight ar) where
+    height = foldl min 19 (map cellHeight ar) where
 
       cellHeight :: Coord -> Int
-      cellHeight (_, y) = foldl max 0 (map snd (filter ((y ==) . fst) pf))
+      cellHeight (_, y) = foldl min 19 (map snd (filter ((y ==) . fst) pf))
 
 
   -- Rotate clockwise or counter-clockwise
-  rotate :: RotationSystem -> Playfield -> Shape -> Rotation -> Dir -> Area -> Area
-  rotate _ _ ShpO _ _ x = x
-  rotate (RS _ rsRotate rsWallKick) pf s r d a = applyWallKick attempt where
+  rotate :: RotationSystem -> Playfield -> Mino -> Dir -> Mino
+  rotate _ _ mino@(Mino _ ShpO _) _ = mino
+  rotate (RS _ rsRotate rsWallKick) pf mino dir = applyWallKick attempt where
 
-    rotated :: Area
-    rotated = rsRotate s r d a
+    rotated :: Mino
+    rotated = rsRotate dir mino
 
-    attempt :: Maybe Area
-    attempt = rsWallKick pf s r d rotated
+    attempt :: Maybe Mino
+    attempt = rsWallKick pf rotated dir
 
-    applyWallKick :: Maybe Area -> Area
-    applyWallKick Nothing  = a
+    applyWallKick :: Maybe Mino -> Mino
+    applyWallKick Nothing  = mino
     applyWallKick (Just x) = x
 
 
@@ -84,36 +97,63 @@ module Tetris where
   findFullLines pf = findFullLines' pf [] where
 
     findFullLines' :: Playfield -> [Int] -> [Int]
-    findFullLines' ((x, y) : ps) ls = case (ps, ls) of
-      (_, []) -> if isFullLine (fieldWidth - 1) y ps then y : [] else []
-      ([], _) -> if elem y ls then ls else if isFullLine (fieldWidth - 1) y ps then y : ls else ls
-      (_, _)  -> if elem y ls then findFullLines' ps ls else findFullLines' ps (if isFullLine (fieldWidth - 1) y ps then y : ls else ls)
-
-    isFullLine :: Int -> Int -> Playfield -> Bool
-    isFullLine 0 _ _             = True
-    isFullLine _ _ (_ : [])      = False
-    isFullLine n l ((_, y) : xs) = isFullLine (if y == l then (n + 1) else n) l xs
+    findFullLines' [] _ = []
+    findFullLines' pf'@((_, y) : ps) ls
+      | null pf' = ls
+      | null ls  = [y | isFullLine (fieldWidth - 1) y ps]
+      | null ps && y `elem` ls = ls
+      | null ps && isFullLine (fieldWidth - 1) y ps = y : ls
+      | null ps = ls
+      | y `elem` ls = findFullLines' ps ls
+      | isFullLine (fieldWidth - 1) y ps = findFullLines' ps (y : ls)
+      | otherwise = findFullLines' ps ls
+      where
+        isFullLine :: Int -> Int -> Playfield -> Bool
+        isFullLine _ _ []            = False
+        isFullLine 0 _ _             = True
+        isFullLine _ _ [_]           = False
+        isFullLine n l ((_, y') : xs)
+          | y' == l = isFullLine (n - 1) l xs
+          | otherwise = isFullLine n l xs
 
 
   -- To clear lines from the line numbers given
   clearLines :: Playfield -> [Int] -> Playfield
+  clearLines xs []       = xs
   clearLines xs (y : ys) = clearLines (clearLine xs y) ys where
 
     clearLine :: Playfield -> Int -> Playfield
-    clearLine xs@((_, y) : []) n = if n == y then [] else xs
-    clearLine    ((x, y) : ys) n = if n == y then clearLine ys n else (x, y) : (clearLine ys n)
+    clearLine []           _ = []
+    clearLine ls@[(_, y')] n = if n == y' then [] else ls
+    clearLine    ((x, y') : ys') n
+      | n == y'   = clearLine ys' n
+      | otherwise = (x, y') : clearLine ys' n
 
 
   -- Naive line clear gravity
   lineClearGravityNaive :: Playfield -> [Int] -> Playfield
   lineClearGravityNaive pf xs = removeLines pf (sort xs) where
 
-    removeLine :: Playfield -> Int -> Playfield
-    removeLine pf l = map dropHigherLines pf where
-
-      dropHigherLines :: Coord -> Coord
-      dropHigherLines (x, y) = (x, if y < l then y - 1 else y)
-
     removeLines :: Playfield -> [Int] -> Playfield
-    removeLines pf []       = pf
-    removeLines pf (x : xs) = removeLines (removeLine pf x) xs
+    removeLines = foldl removeLine where
+
+      removeLine :: Playfield -> Int -> Playfield
+      removeLine pf' l = map dropHigherLines pf' where
+
+        dropHigherLines :: Coord -> Coord
+        dropHigherLines (x, y) = (x, if y < l then y - 1 else y)
+
+  -- Sticky line clear gravity
+  -- lineClearGravitySticky :: Playfield -> Playfield
+  -- lineClearGravitySticky =
+
+
+  -- Random Generation using bag system
+  randomGenerate :: IO [Shape]
+  randomGenerate = liftM2 (!!) (return bags) randomIndex where
+
+    randomIndex :: IO Int
+    randomIndex = randomRIO (0, 5039)
+
+    bags :: [[Shape]]
+    bags = permutations [ShpI, ShpO, ShpS, ShpZ, ShpL, ShpJ, ShpT]
