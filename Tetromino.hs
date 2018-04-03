@@ -1,16 +1,22 @@
 module Tetromino where
 
-  -- Shapes of Minos, which are I, O, S, Z, L, J and T
-  data Shape = ShpI | ShpO | ShpS | ShpZ | ShpL | ShpJ | ShpT
-
-  -- Rotation states of Minos, facing up, right, down and left
-  data Rotation = Spw | Rht | Rev | Lft
-
   -- Coordinate of cells
   type Coord = (Int, Int)
 
   -- Area that is covered by a Mino, represented by a list of cells
   type Area = [Coord]
+
+  -- Shapes of Minos, which are I, O, S, Z, L, J and T
+  data Shape = ShpI | ShpO | ShpS | ShpZ | ShpL | ShpJ | ShpT
+    deriving (Show)
+
+  -- Rotation states of Minos, facing up, right, down and left
+  data Rotation = Spw | Rht | Rev | Lft
+    deriving (Show)
+
+  -- The type of a Tetromino
+  data Mino = Mino Area Shape Rotation
+    deriving (Show)
 
   -- Iterate rotations clockwise
   rotationNext :: Rotation -> Rotation
@@ -27,3 +33,4 @@ module Tetromino where
     Rht -> Spw
     Rev -> Rht
     Lft -> Rev
+    
