@@ -3,9 +3,27 @@ module Tetris where
   import Data.List
   import System.Random
   import Control.Monad
+
   import Tetromino
   import Playfield
   import RotationSystem
+
+  {-
+     This module includes the basic moves of the game, which are:
+     
+       * Move Left:       moveLft
+       * Move Right:      moveRht
+       * Soft Drop:       softDrop
+       * Hard Drop:       hardDrop
+       * Rotate:          rotate
+       * Line Clear:      findFullLines + clearLines + lineClearGravityNaive
+       * Random Generate: randomGenerate
+
+     ** The sticky line-clear gravity is not yet implemented
+
+     ** 'Hold' will not be presented because of the nature of the language **
+     ** Deal with it in main instead **
+  -}
 
 
   -- Left shift for one step
