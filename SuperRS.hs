@@ -45,12 +45,14 @@ module SuperRS where
     wallKickSRS pf mino@(Mino a s    r) d = offset >>= applyOffset mino where
 
       collision :: Playfield -> Area -> Offset -> Bool
-      collision _   []            _      = False
-      collision pf' ((x, y) : as) (p, q) = blockCollision || xOverLowerBound || xOverHigherBound || yOverHigherBound || collision pf' as (p, q) where
-        blockCollision = (x + p, y + q) `elem` pf'
-        xOverLowerBound = x + p < 0
-        xOverHigherBound = x + p >= fieldWidth
-        yOverHigherBound = y + q >= fieldWidth
+      collision _   [] = False
+      collision pf' ((x, y) : as) (p, q)
+        = blockCollision || wallCollision || collision pf' as (p, q) where
+          blockCollision   = (x + p, y + q) `elem` pf'
+          xOverLowerBound  = x + p < 0
+          xOverHigherBound = x + p >= fieldWidth
+          yOverHigherBound = y + q >= fieldWidth
+          wallCollision = xOverLowerBound || xOverHigherBound || yOverHigherBound
 
       safe :: Playfield -> Area -> Offset -> Bool
       safe x y z = not (collision x y z)
