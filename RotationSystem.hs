@@ -1,7 +1,10 @@
-module RotationSystem (SpawnState, Rotate, WallKick, RotationSystem(RS), Dir(CW,CC)) where
+module RotationSystem where
 
   import Tetromino
   import Playfield
+
+  -- Directions to rotate, clockwise and counter-clockwise
+  data Dir = CW | CC
 
   {-
      A Rotation System defines:
@@ -13,11 +16,8 @@ module RotationSystem (SpawnState, Rotate, WallKick, RotationSystem(RS), Dir(CW,
      accroding to http://tetris.wikia.com/wiki/Category:Rotation_Systems
   -}
 
-  type SpawnState = Shape -> Area
-  type Rotate     = Shape -> Rotation -> Dir -> Area -> Area
-  type WallKick   = Playfield -> Shape -> Rotation -> Dir -> Area -> Maybe Area
+  type Spawn    = Shape -> Mino
+  type Rotate   = Dir -> Mino -> Mino
+  type WallKick = Playfield -> Mino -> Dir -> Maybe Mino
 
-  data RotationSystem = RS SpawnState Rotate WallKick
-
-  -- Directions to rotate, clockwise and counter-clockwise
-  data Dir = CW | CC
+  data RotationSystem = RS Spawn Rotate WallKick
