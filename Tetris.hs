@@ -10,7 +10,7 @@ module Tetris where
 
   {-
      This module includes the basic moves of the game, which are:
-     
+
        * Move Left:       moveLft
        * Move Right:      moveRht
        * Soft Drop:       softDrop
@@ -63,25 +63,31 @@ module Tetris where
 
 
   -- Soft drop
-  softDrop :: Playfield -> Mino -> Mino
-  softDrop pf (Mino ar s r) = Mino ar' s r where
+  softDrop :: Playfield -> Mino -> Either Mino Playfield
+  softDrop pf (Mino ar s r)
+    | tryDwn ar = Left (Mino (map mvDwn ar) s r)
+    | otherwise = Right (pf ++ ar)
+      where
+        tryDwn :: Area -> Bool
+        tryDwn [] = False  -- Should never happen
+        tryDwn ((x, y) : as)
+          | y >= (fieldHeight - 1) = False
+          | null as  = (x, y + 1) `notElem` pf
+          | otherwise = (x, y + 1) `notElem` pf && tryDwn as
 
-    tryDwn :: Area -> Bool
-    tryDwn [] = False  -- Should never happen
-    tryDwn ((x, y) : as)
-      | y == fieldHeight = False
-      | null as  = (x, y + 1) `notElem` pf
-      | otherwise = (x, y + 1) `notElem` pf && tryDwn as
-
-    shiftDwn :: Coord -> Coord
-    shiftDwn (x, y) = (x, y + 1)
-
-    ar' :: Area
-    ar' = if tryDwn ar then map shiftDwn ar else ar
+        mvDwn :: Coord -> Coord
+        mvDwn (x, y) = (x, y + 1)
 
 
   -- Hard drop
   hardDrop :: Playfield -> Mino -> Playfield
+  hardDrop [] (Mino ar _ _) = fmap dropToButtom ar where
+
+    dropToButtom :: (Int, Int) -> (Int, Int)
+    dropToButtom (x, y) = (x, y + offsetY) where
+      offsetY :: Int
+      offsetY = 19 - maximum (map snd ar)
+
   hardDrop pf (Mino ar _ _) = pf ++ fmap (drop' height) ar where
 
     drop' :: Int -> Coord -> Coord
@@ -91,7 +97,12 @@ module Tetris where
     height = foldl min 19 (map cellHeight ar) where
 
       cellHeight :: Coord -> Int
-      cellHeight (_, y) = foldl min 19 (map snd (filter ((y ==) . fst) pf))
+      cellHeight (x, y) = case ysBelow of
+        [] -> 19 - maximum (map snd ar)
+        xs -> minimum xs
+        where
+          ysBelow =map ((\y' -> (y' - y) - 1) . snd)
+            (filter ((y <) . snd) (filter ((x ==) . fst) pf))
 
 
   -- Rotate clockwise or counter-clockwise
@@ -112,54 +123,34 @@ module Tetris where
 
   -- Find lines to clear after a Mino lands
   findFullLines :: Playfield -> [Int]
-  findFullLines pf = findFullLines' pf [] where
+  findFullLines pf = findFullLines' pf [0..fieldHeight] where
 
     findFullLines' :: Playfield -> [Int] -> [Int]
     findFullLines' [] _ = []
-    findFullLines' pf'@((_, y) : ps) ls
-      | null pf' = ls
-      | null ls  = [y | isFullLine (fieldWidth - 1) y ps]
-      | null ps && y `elem` ls = ls
-      | null ps && isFullLine (fieldWidth - 1) y ps = y : ls
-      | null ps = ls
-      | y `elem` ls = findFullLines' ps ls
-      | isFullLine (fieldWidth - 1) y ps = findFullLines' ps (y : ls)
-      | otherwise = findFullLines' ps ls
-      where
-        isFullLine :: Int -> Int -> Playfield -> Bool
-        isFullLine _ _ []            = False
-        isFullLine 0 _ _             = True
-        isFullLine _ _ [_]           = False
-        isFullLine n l ((_, y') : xs)
-          | y' == l = isFullLine (n - 1) l xs
-          | otherwise = isFullLine n l xs
+    findFullLines' _ [] = []
+    findFullLines' pf' (l : ls)
+      | length (filter ((== l) . snd) pf') > fieldWidth = l : findFullLines' pf' ls
+      | otherwise = findFullLines' pf' ls
 
 
   -- To clear lines from the line numbers given
   clearLines :: Playfield -> [Int] -> Playfield
-  clearLines xs []       = xs
-  clearLines xs (y : ys) = clearLines (clearLine xs y) ys where
-
-    clearLine :: Playfield -> Int -> Playfield
-    clearLine []           _ = []
-    clearLine ls@[(_, y')] n = if n == y' then [] else ls
-    clearLine    ((x, y') : ys') n
-      | n == y'   = clearLine ys' n
-      | otherwise = (x, y') : clearLine ys' n
+  clearLines pf [] = pf
+  clearLines pf (l : ls) = clearLines (filter ((/= l) . snd) pf) ls
 
 
   -- Naive line clear gravity
   lineClearGravityNaive :: Playfield -> [Int] -> Playfield
-  lineClearGravityNaive pf xs = removeLines pf (sort xs) where
-
-    removeLines :: Playfield -> [Int] -> Playfield
-    removeLines = foldl removeLine where
-
-      removeLine :: Playfield -> Int -> Playfield
-      removeLine pf' l = map dropHigherLines pf' where
-
-        dropHigherLines :: Coord -> Coord
-        dropHigherLines (x, y) = (x, if y < l then y - 1 else y)
+  lineClearGravityNaive [] _ = []
+  lineClearGravityNaive pf [] = pf
+  lineClearGravityNaive pf (l : ls) = lineClearGravityNaive (moved ++ orign) ls
+    where
+      mvDwn :: (Int, Int) -> (Int, Int)
+      mvDwn (x, y) = (x, y + 1)
+      moved :: [(Int, Int)]
+      moved = map mvDwn $ filter ((< l) . snd) pf
+      orign :: [(Int, Int)]
+      orign = filter ((> l) . snd) pf
 
   -- Sticky line clear gravity
   -- lineClearGravitySticky :: Playfield -> Playfield
