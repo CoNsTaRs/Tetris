@@ -60,8 +60,8 @@ module SuperRS where
         = blockCollision || wallCollision || collision pf' as (p, q) where
           blockCollision   = (x + p, y + q) `elem` pf'
           xOverLowerBound  = x + p < 0
-          xOverHigherBound = x + p >= fieldWidth
-          yOverHigherBound = y + q >= fieldWidth
+          xOverHigherBound = x + p > fieldWidth
+          yOverHigherBound = y + q > fieldHeight
           wallCollision = xOverLowerBound || xOverHigherBound || yOverHigherBound
 
       safe :: Playfield -> Area -> Offset -> Bool
