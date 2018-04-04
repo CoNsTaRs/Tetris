@@ -20,4 +20,8 @@ module RotationSystem where
   type Rotate   = Dir -> Mino -> Mino
   type WallKick = Playfield -> Mino -> Dir -> Maybe Mino
 
-  data RotationSystem = RS Spawn Rotate WallKick
+  data RotationSystem = RS {
+    rsSpawn    :: Spawn,
+    rsRotate   :: Rotate,
+    rsWallKick :: WallKick
+  }
