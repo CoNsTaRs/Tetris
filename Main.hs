@@ -1,6 +1,10 @@
 module Main where
 
   import System.IO
+  import System.Sleep (sleep)
+  import Control.Concurrent (forkIO, MVar, newMVar, newEmptyMVar, readMVar, swapMVar)
+  import Control.Concurrent.Timer (repeatedTimer, repeatedStart)
+  import Control.Concurrent.Suspend.Lifted (msDelay)
   import Tetromino
   import Playfield
   import RotationSystem
@@ -9,6 +13,15 @@ module Main where
 
   data Action = MVLFT | MVRHT | MVDWN | HRDRP | ROTCW | NOACT
     deriving (Eq)
+
+  data Env = Env {
+    rotSystem :: RotationSystem,
+    playfield :: MVar Playfield,
+    currMino  :: MVar Mino,
+    locked    :: MVar Bool,
+    holded    :: MVar Shape,
+    nextList  :: [Shape]
+  }
 
   hideCursor :: IO ()
   hideCursor = putStr "\ESC[?25l"
@@ -19,15 +32,24 @@ module Main where
       escapeCode :: String
       escapeCode = "\ESC[" ++ show (y + 1) ++ ";" ++ show ((x + 1) * 2) ++ "H"
 
+  clearScreen :: IO ()
+  clearScreen = putStr "\ESC[2J"
+
+  printCell :: (Int, Int) -> IO ()
+  printCell (x, y)
+    | x >= 0 && y >= 0 = moveCursor x y *> putStr "██"
+    | otherwise = return ()
+
   eraseMino :: Mino -> IO ()
   eraseMino (Mino []            _ _) = return ()
   eraseMino (Mino ((x, y) : as) r s) = moveCursor x y *> putStr "  " *> eraseMino (Mino as r s)
 
   printMino :: Mino -> IO ()
   printMino (Mino []            _ _) = return ()
-  printMino (Mino ((x, y) : as) r s)
-    | x >= 0 && y >= 0 = moveCursor x y *> putStr "██" *> printMino (Mino as r s)
-    | otherwise = return ()
+  printMino (Mino (x : xs) r s) = printCell x *> printMino (Mino xs r s)
+
+  printField :: Playfield -> IO ()
+  printField pf = clearScreen *> foldr ((*>) . printCell) (return ()) pf
 
   getKey :: IO String
   getKey = reverse <$> getKey' ""
@@ -48,14 +70,19 @@ module Main where
       "\SP"    -> return HRDRP
       _        -> return NOACT
 
-  doAction :: RotationSystem -> Playfield -> Mino -> Action -> IO (Playfield, Mino)
-  doAction rs pf mino act
-    | act == MVLFT = let mino'= moveLft pf mino in eraseMino mino *> printMino mino' *> return (pf, mino')
-    | act == MVRHT = let mino'= moveRht pf mino in eraseMino mino *> printMino mino' *> return (pf, mino')
-    | act == MVDWN = let mino'= softDrop pf mino in eraseMino mino *> printMino mino' *> return (pf, mino')
-    -- | act == HRDRP = eraseMino mino *> printMino mino' where mino'= (hardDrop pf mino)
-    | act == ROTCW = let  mino'= rotate rs pf mino CW in eraseMino mino *> printMino mino' *> return (pf, mino')
-    | otherwise    = return (pf, mino)
+  doAction :: Env -> Action -> IO Env
+  doAction env act = do
+    mino <- readMVar (currMino env)
+    pf   <- readMVar (playfield env)
+    case act of
+      MVLFT -> let mino'= moveLft pf mino in eraseMino mino *> printMino mino' *> swapMVar (currMino env) mino' *> return env
+      MVRHT -> let mino'= moveRht pf mino in eraseMino mino *> printMino mino' *> swapMVar (currMino env) mino' *> return env
+      MVDWN -> case softDrop pf mino of
+        (Left mino') -> eraseMino mino *> printMino mino' *> swapMVar (currMino env) mino' *> return env
+        (Right pf')  -> swapMVar (playfield env) pf' *> swapMVar (locked env) True *> return env
+      HRDRP -> let pf' = (hardDrop pf mino) in swapMVar (playfield env) pf' *> swapMVar (locked env) True *> return env
+      ROTCW -> let  mino'= rotate (rotSystem env) pf mino CW in eraseMino mino *> printMino mino' *> swapMVar (currMino env) mino' *> return env
+      _     -> return env
 
   main :: IO ()
   main = do
@@ -63,30 +90,62 @@ module Main where
     hSetEcho stdin False
     hSetBuffering stdin NoBuffering
     hSetBuffering stdout NoBuffering
-    generatePhase superRS [] where
-      locked :: Bool
-      locked = False
+    clearScreen
+    w <- newMVar []
+    x <- newMVar (Mino [] ShpI Spw)
+    y <- newMVar False
+    z <- newEmptyMVar
+    generatePhase (Env superRS w x y z []) where
 
-      generatePhase :: RotationSystem -> Playfield -> IO ()
-      generatePhase rs@(RS spawn _ _) pf = mino >>= f rs pf
+      generatePhase :: Env -> IO ()
+      generatePhase env = do
+        bag' <- bag
+        mino <- newMVar (rsSpawn (rotSystem env) (head bag'))
+        locked' <- newMVar False
+        _ <- forkIO gravityStart
+        fallingPhase (Env (rotSystem env) (playfield env) mino locked' (holded env) (tail bag'))
         where
           bag :: IO [Shape]
-          bag = randomGenerate
-          shape :: IO Shape
-          shape = fmap head bag
-          mino :: IO Mino
-          mino = fmap spawn shape
-          f :: RotationSystem -> Playfield -> Mino -> IO ()
-          f x y z = fallingPhase x (y, z)
+          bag = if null (nextList env) then randomGenerate else return (nextList env)
 
-      fallingPhase :: RotationSystem -> (Playfield, Mino) -> IO ()
-      fallingPhase rs (pf, mino)
-        | locked = completePhase rs pf
-        | otherwise = f >>= fallingPhase rs
+          gravityStart :: IO ()
+          gravityStart = do
+            timer <- repeatedTimer doSoftDrop (msDelay 500)
+            _ <- repeatedStart timer doSoftDrop (msDelay 500)
+            return ()
+              where
+                doSoftDrop :: IO ()
+                doSoftDrop = do
+                  pf <- readMVar (playfield env)
+                  locked' <- readMVar (locked env)
+                  mino <- readMVar (currMino env)
+                  case locked' of
+                    False -> case softDrop pf mino of
+                      (Left  mino') -> swapMVar (currMino env) mino' *> eraseMino mino *> printMino mino'
+                      (Right pf')   -> swapMVar (playfield env) pf' *> swapMVar (locked env) True *> printField pf'
+                    _ -> return ()
+
+      fallingPhase :: Env -> IO ()
+      fallingPhase env = do
+        locked' <- readMVar (locked env)
+        case locked' of
+          True -> completePhase env
+          _    -> f >>= fallingPhase
           where
-            f :: IO (Playfield, Mino)
-            f = getAction >>= doAction rs pf mino
+            f :: IO Env
+            f = getAction >>= doAction env
 
-      completePhase :: RotationSystem -> Playfield -> IO ()
-      completePhase = generatePhase  --  printField (lineClearGravity $ clearLine pf $ findFullLine pf) >>=
-      
+      completePhase :: Env -> IO ()
+      completePhase env = do
+        pf <- readMVar (playfield env)
+        -- sleep 0.03
+        printField $ fieldClearedFullLines pf
+        sleep 0.1
+        printField $ fieldLineCleared pf
+        swapMVar (playfield env) (fieldLineCleared pf)
+        generatePhase env
+          where
+            fieldClearedFullLines :: Playfield -> Playfield
+            fieldClearedFullLines pf = clearLines pf $ findFullLines pf
+            fieldLineCleared :: Playfield -> Playfield
+            fieldLineCleared pf = lineClearGravityNaive (fieldClearedFullLines pf) (findFullLines pf)
