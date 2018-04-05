@@ -34,8 +34,8 @@ module Tetris where
     tryLft [] = False  -- Should never happen
     tryLft ((x, y) : as)
       | x == 0 = False
-      | null as = (x - 1, y) `notElem` pf
-      | otherwise = ((x - 1, y) `notElem` pf) && tryLft as
+      | null as = (x - 1, y) `notElem` coord pf
+      | otherwise = ((x - 1, y) `notElem` coord pf) && tryLft as
 
     shiftLft :: Coord -> Coord
     shiftLft (x, y) = (x - 1, y)
@@ -51,9 +51,9 @@ module Tetris where
     tryRht :: Area -> Bool
     tryRht [] = False  -- Should never happen
     tryRht ((x, y) : as)
-      | x == fieldWidth = False
-      | null as = (x + 1, y) `notElem` pf
-      | otherwise = (x + 1, y) `notElem` pf && tryRht as
+      | x >= (fieldWidth - 1) = False
+      | null as = (x + 1, y) `notElem` coord pf
+      | otherwise = (x + 1, y) `notElem` coord pf && tryRht as
 
     shiftRht :: Coord -> Coord
     shiftRht (x, y) = (x + 1, y)
@@ -64,57 +64,63 @@ module Tetris where
 
   -- Soft drop
   softDrop :: Playfield -> Mino -> Either Mino Playfield
-  softDrop pf (Mino ar s r)
+  softDrop pf mino@(Mino ar s r)
     | tryDwn ar = Left (Mino (map mvDwn ar) s r)
-    | otherwise = Right (pf ++ ar)
+    | otherwise = Right (appendMino pf mino)
       where
         tryDwn :: Area -> Bool
         tryDwn [] = False  -- Should never happen
         tryDwn ((x, y) : as)
-          | y >= (fieldHeight - 1) = False
-          | null as  = (x, y + 1) `notElem` pf
-          | otherwise = (x, y + 1) `notElem` pf && tryDwn as
+          | y >= fieldHeight = False
+          | null as  = (x, y + 1) `notElem` coord pf
+          | otherwise = (x, y + 1) `notElem` coord pf && tryDwn as
 
         mvDwn :: Coord -> Coord
-        mvDwn (x, y) = (x, y + 1)
+        mvDwn (x, y) = if y < fieldHeight then (x, y + 1) else (x, y)
 
 
   -- Hard drop
-  hardDrop :: Playfield -> Mino -> Playfield
-  hardDrop [] (Mino ar _ _) = fmap dropToButtom ar where
+  hardDrop :: Playfield -> Mino -> (Playfield, Mino)
+  hardDrop [] (Mino ar s r) = pack' (map dropToButtom ar) where
 
-    dropToButtom :: (Int, Int) -> (Int, Int)
+    pack' :: Area -> (Playfield, Mino)
+    pack' ar' = (fmap (\(x, y) -> (x, y, s)) ar', Mino ar' s r)
+
+    dropToButtom :: Coord -> Coord
     dropToButtom (x, y) = (x, y + offsetY) where
       offsetY :: Int
-      offsetY = 19 - maximum (map snd ar)
+      offsetY = fieldHeight - maximum (map snd ar)
 
-  hardDrop pf (Mino ar _ _) = pf ++ fmap (drop' height) ar where
+  hardDrop pf (Mino ar s r) = pack' (map (drop' height) ar) where
+
+    pack' :: Area -> (Playfield, Mino)
+    pack' ar' = (pf ++ fmap (\(x, y) -> (x, y, s)) ar', Mino ar' s r)
 
     drop' :: Int -> Coord -> Coord
     drop' n (x, y) = (x, y + n)
 
     height :: Int
-    height = foldl min 19 (map cellHeight ar) where
+    height = foldl min fieldHeight (map cellHeight ar) where
 
       cellHeight :: Coord -> Int
       cellHeight (x, y) = case ysBelow of
-        [] -> 19 - maximum (map snd ar)
+        [] -> fieldHeight - maximum (map snd ar)
         xs -> minimum xs
         where
           ysBelow =map ((\y' -> (y' - y) - 1) . snd)
-            (filter ((y <) . snd) (filter ((x ==) . fst) pf))
+            (filter ((y <) . snd) (filter ((x ==) . fst) (coord pf)))
 
 
   -- Rotate clockwise or counter-clockwise
   rotate :: RotationSystem -> Playfield -> Mino -> Dir -> Mino
   rotate _ _ mino@(Mino _ ShpO _) _ = mino
-  rotate (RS _ rsRotate rsWallKick) pf mino dir = applyWallKick attempt where
+  rotate rs pf mino dir = applyWallKick attempt where
 
     rotated :: Mino
-    rotated = rsRotate dir mino
+    rotated = rsRotate rs dir mino
 
     attempt :: Maybe Mino
-    attempt = rsWallKick pf rotated dir
+    attempt = rsWallKick rs pf rotated dir
 
     applyWallKick :: Maybe Mino -> Mino
     applyWallKick Nothing  = mino
@@ -129,14 +135,17 @@ module Tetris where
     findFullLines' [] _ = []
     findFullLines' _ [] = []
     findFullLines' pf' (l : ls)
-      | length (filter ((== l) . snd) pf') > fieldWidth = l : findFullLines' pf' ls
+      | length (filter ((== l) . snd) (coord pf')) >= fieldWidth = l : findFullLines' pf' ls
       | otherwise = findFullLines' pf' ls
 
 
   -- To clear lines from the line numbers given
   clearLines :: Playfield -> [Int] -> Playfield
   clearLines pf [] = pf
-  clearLines pf (l : ls) = clearLines (filter ((/= l) . snd) pf) ls
+  clearLines pf (l : ls) = clearLines (filter ((/= l) . snd3) pf) ls
+    where
+      snd3 :: (a, b, c) -> b
+      snd3 (_, x, _) = x
 
 
   -- Naive line clear gravity
@@ -145,12 +154,14 @@ module Tetris where
   lineClearGravityNaive pf [] = pf
   lineClearGravityNaive pf (l : ls) = lineClearGravityNaive (moved ++ orign) ls
     where
-      mvDwn :: (Int, Int) -> (Int, Int)
-      mvDwn (x, y) = (x, y + 1)
-      moved :: [(Int, Int)]
-      moved = map mvDwn $ filter ((< l) . snd) pf
-      orign :: [(Int, Int)]
-      orign = filter ((> l) . snd) pf
+      snd3 :: (a, b, c) -> b
+      snd3 (_, x, _) = x
+      mvDwn :: Cell -> Cell
+      mvDwn (x, y, z) = (x, y + 1, z)
+      moved :: [Cell]
+      moved = map mvDwn $ filter ((< l) . snd3) pf
+      orign :: [Cell]
+      orign = filter ((> l) . snd3) pf
 
   -- Sticky line clear gravity
   -- lineClearGravitySticky :: Playfield -> Playfield
