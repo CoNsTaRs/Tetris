@@ -15,8 +15,11 @@ module Tetromino where
     deriving (Show)
 
   -- The type of a Tetromino
-  data Mino = Mino Area Shape Rotation
-    deriving (Show)
+  data Mino = Mino {
+    areaOf     :: Area,
+    shapeOf    :: Shape,
+    rotationOf :: Rotation
+  } deriving (Show)
 
   -- Iterate rotations clockwise
   rotationNext :: Rotation -> Rotation
@@ -24,7 +27,7 @@ module Tetromino where
     Spw -> Rht
     Rht -> Rev
     Rev -> Lft
-    Lft -> Rht
+    Lft -> Spw
 
   -- Iterate rotations counter-clockwise
   rotationPrev :: Rotation -> Rotation
