@@ -1,8 +1,9 @@
 module Main where
 
-  import System.IO
+  import Control.Monad (liftM2)
+  import System.IO (hReady, stdin, stdout, hSetEcho, hSetBuffering, BufferMode(NoBuffering))
   import System.Sleep (sleep)
-  import Control.Concurrent (forkIO, MVar, newMVar, newEmptyMVar, readMVar, swapMVar)
+  import Control.Concurrent (MVar, newMVar, newEmptyMVar, isEmptyMVar, readMVar, putMVar, swapMVar)
   import Control.Concurrent.Timer (repeatedTimer, repeatedStart)
   import Control.Concurrent.Suspend.Lifted (msDelay)
   import Tetromino
@@ -10,8 +11,9 @@ module Main where
   import RotationSystem
   import SuperRS
   import Tetris
+  import Color
 
-  data Action = MVLFT | MVRHT | MVDWN | HRDRP | ROTCW | NOACT
+  data Action = MVLFT | MVRHT | MVDWN | HRDRP | ROTCW | AHOLD | NOACT
     deriving (Eq)
 
   data Env = Env {
@@ -26,30 +28,91 @@ module Main where
   hideCursor :: IO ()
   hideCursor = putStr "\ESC[?25l"
 
-  moveCursor :: Int -> Int -> IO ()
-  moveCursor x y  = putStr escapeCode
+  moveCursor :: (Int, Int) -> IO ()
+  moveCursor (x, y)
+    | x >= 0 && y >= 0 = putStr escapeCode
+    | otherwise = moveCursor (21, 0)
     where
       escapeCode :: String
-      escapeCode = "\ESC[" ++ show (y + 1) ++ ";" ++ show ((x + 1) * 2) ++ "H"
+      escapeCode = "\ESC[" ++ show y ++ ";" ++ show ((x * 2) + 1) ++ "H"
 
   clearScreen :: IO ()
   clearScreen = putStr "\ESC[2J"
 
-  printCell :: (Int, Int) -> IO ()
-  printCell (x, y)
-    | x >= 0 && y >= 0 = moveCursor x y *> putStr "██"
+  clearField :: IO ()
+  clearField = do
+    putStr "\ESC[0;0H\ESC[1;37m"
+    clearField' emptyField
+      where
+        emptyField :: [String]
+        emptyField = replicate fieldHeight (replicate (fieldWidth * 2) '█')
+        clearField' :: [String] -> IO ()
+        clearField' = foldr ((*>) . putStrLn) (return ())
+
+  printCell :: Cell -> IO ()
+  printCell (x, y, s)
+    | x >= 0 && y >= 0 = do
+      moveCursor (x, y)
+      putStr (colorOf s ++ "██")
+    | otherwise = return ()
+
+  printCellShadow :: Coord -> IO ()
+  printCellShadow (x, y)
+    | x >= 0 && y >= 0 = do
+      moveCursor (x, y)
+      putStr "\ESC[1;30m██"
+    | otherwise = return ()
+
+  eraseCell :: Coord -> IO ()
+  eraseCell (x, y)
+    | x >= 0 && y >= 0 = do
+      moveCursor (x, y)
+      putStr "\ESC[1;37m██"
     | otherwise = return ()
 
   eraseMino :: Mino -> IO ()
   eraseMino (Mino []            _ _) = return ()
-  eraseMino (Mino ((x, y) : as) r s) = moveCursor x y *> putStr "  " *> eraseMino (Mino as r s)
+  eraseMino (Mino ((x, y) : as) r s) = do
+    eraseCell (x, y)
+    eraseMino (Mino as r s)
+
+  eraseShadow :: Playfield -> Mino -> IO ()
+  eraseShadow _ (Mino [] _ _) = return ()
+  eraseShadow pf mino = case snd $ hardDrop pf mino of
+    (Mino as _ _) -> eraseShadow' as where
+      eraseShadow' :: Area -> IO ()
+      eraseShadow' [] = return ()
+      eraseShadow' ((x, y) : xs) = do
+        eraseCell (x, y)
+        eraseShadow' xs
 
   printMino :: Mino -> IO ()
   printMino (Mino []            _ _) = return ()
-  printMino (Mino (x : xs) r s) = printCell x *> printMino (Mino xs r s)
+  printMino (Mino ((x, y) : as) s r)
+    | x >= 0 && y >= 0 = do
+      printCell (x, y, s)
+      printMino (Mino as s r)
+    | otherwise = printMino (Mino as s r)
+
+  printShadow :: Playfield -> Mino -> IO ()
+  printShadow _ (Mino [] _ _) = return ()
+  printShadow pf mino = case snd $ hardDrop pf mino of
+    (Mino as _ _) -> printShadow' as where
+      printShadow' :: Area -> IO ()
+      printShadow' [] = return ()
+      printShadow' ((x, y) : xs) = do
+        printCellShadow (x, y)
+        printShadow' xs
+
+  updateMino :: Playfield -> Mino -> Mino -> IO ()
+  updateMino pf mino mino' = do
+    eraseMino mino
+    eraseShadow pf mino
+    printShadow pf mino'
+    printMino mino'
 
   printField :: Playfield -> IO ()
-  printField pf = clearScreen *> foldr ((*>) . printCell) (return ()) pf
+  printField pf = clearField *> foldr ((*>) . printCell) (return ()) pf
 
   getKey :: IO String
   getKey = reverse <$> getKey' ""
@@ -61,28 +124,73 @@ module Main where
 
   getAction :: IO Action
   getAction = do
-    key <- getKey
-    case key of
-      "\ESC[A" -> return ROTCW
-      "\ESC[B" -> return MVDWN
-      "\ESC[C" -> return MVRHT
-      "\ESC[D" -> return MVLFT
-      "\SP"    -> return HRDRP
-      _        -> return NOACT
+    ready <- hReady stdin
+    if ready then do
+      key <- getKey
+      case key of
+        "\ESC[A" -> return ROTCW
+        "\ESC[B" -> return MVDWN
+        "\ESC[C" -> return MVRHT
+        "\ESC[D" -> return MVLFT
+        "\SP"    -> return HRDRP
+        "z"      -> return AHOLD
+        _        -> return NOACT
+    else do
+      sndReady <- hReady stdin
+      if sndReady then getAction else return NOACT
 
   doAction :: Env -> Action -> IO Env
   doAction env act = do
-    mino <- readMVar (currMino env)
-    pf   <- readMVar (playfield env)
-    case act of
-      MVLFT -> let mino'= moveLft pf mino in eraseMino mino *> printMino mino' *> swapMVar (currMino env) mino' *> return env
-      MVRHT -> let mino'= moveRht pf mino in eraseMino mino *> printMino mino' *> swapMVar (currMino env) mino' *> return env
-      MVDWN -> case softDrop pf mino of
-        (Left mino') -> eraseMino mino *> printMino mino' *> swapMVar (currMino env) mino' *> return env
-        (Right pf')  -> swapMVar (playfield env) pf' *> swapMVar (locked env) True *> return env
-      HRDRP -> let pf' = (hardDrop pf mino) in swapMVar (playfield env) pf' *> swapMVar (locked env) True *> return env
-      ROTCW -> let  mino'= rotate (rotSystem env) pf mino CW in eraseMino mino *> printMino mino' *> swapMVar (currMino env) mino' *> return env
-      _     -> return env
+    locked' <- readMVar (locked env)
+    if locked' then
+      return env
+    else do
+      mino <- readMVar (currMino env)
+      pf   <- readMVar (playfield env)
+      case act of
+        MVLFT -> let mino'= moveLft pf mino in do
+          updateMino pf mino mino'
+          swapMVar (currMino env) mino'
+          return env
+        MVRHT -> let mino'= moveRht pf mino in do
+          updateMino pf mino mino'
+          swapMVar (currMino env) mino'
+          return env
+        MVDWN -> case softDrop pf mino of
+          (Left mino') -> do
+            updateMino pf mino mino'
+            swapMVar (currMino env) mino'
+            return env
+          (Right pf')  -> do
+            swapMVar (playfield env) pf'
+            swapMVar (locked env) True
+            return env
+        HRDRP -> let pf' = (fst $ hardDrop pf mino) in do
+          swapMVar (playfield env) pf'
+          swapMVar (locked env) True
+          return env
+        ROTCW -> let mino'= rotate (rotSystem env) pf mino CW in do
+          updateMino pf mino mino'
+          swapMVar (currMino env) mino'
+          return env
+        AHOLD -> do
+          isEmpty <- isEmptyMVar (holded env)
+          if isEmpty then do
+            _ <- swapMVar (locked env) False
+            putMVar (holded env) (shapeOf mino)
+            _ <- swapMVar (currMino env) (rsSpawn (rotSystem env) (head (nextList env)))
+            mino' <- readMVar (currMino env)
+            updateMino pf mino mino'
+            return (Env (rotSystem env) (playfield env) (currMino env) (locked env) (holded env) (tail (nextList env)))
+          else do
+            holded' <- readMVar (holded env)
+            _ <- swapMVar (holded env) (shapeOf mino)
+            eraseMino mino
+            _ <- swapMVar (currMino env) (rsSpawn (rotSystem env) holded')
+            mino' <- readMVar (currMino env)
+            updateMino pf mino mino'
+            return env
+        _     -> return env
 
   main :: IO ()
   main = do
@@ -91,6 +199,7 @@ module Main where
     hSetBuffering stdin NoBuffering
     hSetBuffering stdout NoBuffering
     clearScreen
+    clearField
     w <- newMVar []
     x <- newMVar (Mino [] ShpI Spw)
     y <- newMVar False
@@ -101,39 +210,41 @@ module Main where
       generatePhase env = do
         bag' <- bag
         mino <- newMVar (rsSpawn (rotSystem env) (head bag'))
+        mino' <- readMVar mino
+        pf <- readMVar (playfield env)
         locked' <- newMVar False
-        _ <- forkIO gravityStart
-        fallingPhase (Env (rotSystem env) (playfield env) mino locked' (holded env) (tail bag'))
+        let env' = Env (rotSystem env) (playfield env) mino locked' (holded env) (tail bag') in gravityStart env' *> printShadow pf mino' *> printMino mino' *> fallingPhase env'
         where
           bag :: IO [Shape]
-          bag = if null (nextList env) then randomGenerate else return (nextList env)
+          bag = if length (nextList env) <= 1 then liftM2 (++) (return $ nextList env) randomGenerate else return (nextList env)
 
-          gravityStart :: IO ()
-          gravityStart = do
-            timer <- repeatedTimer doSoftDrop (msDelay 500)
-            _ <- repeatedStart timer doSoftDrop (msDelay 500)
+          gravityStart :: Env -> IO ()
+          gravityStart env' = do
+            timer <- repeatedTimer (return ()) (msDelay 0)
+            _ <- repeatedStart timer doSoftDrop (msDelay 1000)
             return ()
               where
                 doSoftDrop :: IO ()
                 doSoftDrop = do
-                  pf <- readMVar (playfield env)
-                  locked' <- readMVar (locked env)
-                  mino <- readMVar (currMino env)
+                  pf <- readMVar (playfield env')
+                  locked' <- readMVar (locked env')
+                  mino <- readMVar (currMino env')
                   case locked' of
                     False -> case softDrop pf mino of
-                      (Left  mino') -> swapMVar (currMino env) mino' *> eraseMino mino *> printMino mino'
-                      (Right pf')   -> swapMVar (playfield env) pf' *> swapMVar (locked env) True *> printField pf'
+                      (Left  mino') -> do
+                        swapMVar (currMino env') mino'
+                        eraseMino mino
+                        printMino mino'
+                      (Right pf')   -> do
+                        swapMVar (playfield env') pf'
+                        swapMVar (locked env') True
+                        printField pf'
                     _ -> return ()
 
       fallingPhase :: Env -> IO ()
       fallingPhase env = do
         locked' <- readMVar (locked env)
-        case locked' of
-          True -> completePhase env
-          _    -> f >>= fallingPhase
-          where
-            f :: IO Env
-            f = getAction >>= doAction env
+        if locked' then completePhase env else (getAction >>= doAction env) >>= fallingPhase
 
       completePhase :: Env -> IO ()
       completePhase env = do
@@ -142,7 +253,7 @@ module Main where
         printField $ fieldClearedFullLines pf
         sleep 0.1
         printField $ fieldLineCleared pf
-        swapMVar (playfield env) (fieldLineCleared pf)
+        _ <- swapMVar (playfield env) (fieldLineCleared pf)
         generatePhase env
           where
             fieldClearedFullLines :: Playfield -> Playfield
